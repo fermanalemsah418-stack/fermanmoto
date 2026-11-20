@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>FermanMoto - Şehir Sürüşü</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101820;font-family:Arial,sans-serif;touch-action:none}
+canvas{display:block;width:100vw;height:100vh;touch-action:none}
+#hud{position:fixed;inset:0;pointer-events:none;color:white;text-shadow:0 2px 4px #111}
+#brand{position:absolute;top:12px;left:14px;font-weight:900;font-size:17px;letter-spacing:1px}
+#score{position:absolute;top:40px;left:14px;font-size:13px}
+#speedo{position:absolute;right:16px;top:15px;width:88px;height:88px;border:5px solid #dce5e8;border-radius:50%;background:#18232bd9;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 0 3px #394a50}
+#speed{font-size:23px;font-weight:900}#unit{font-size:9px}
+#gear{position:absolute;right:26px;top:111px;font-size:12px}
+#map{position:absolute;top:16px;left:50%;transform:translateX(-50%);width:65px;height:65px;border:3px solid #eee;border-radius:50%;background:#26343bcc;overflow:hidden}
+#map:before{content:"";position:absolute;width:80px;height:6px;background:#eee;left:-8px;top:28px;transform:rotate(-38deg)}
+#map:after{content:"";position:absolute;width:5px;height:42px;background:#27d8d0;left:29px;top:8px;transform:rotate(18deg);border-radius:8px}
+.mirror{position:absolute;top:30%;width:22%;height:48px;border:3px solid #15191b;border-radius:50%;background:linear-gradient(#8db7c2,#384d54);box-shadow:0 3px 5px #111}
+#ml{left:6%}#mr{right:6%}
+#controls{position:absolute;bottom:18px;left:0;right:0;display:flex;justify-content:space-between;align-items:end;padding:0 18px;pointer-events:auto}
+.group{display:flex;gap:10px;align-items:end}
+button{border:2px solid #ffffff88;background:#18232bbd;color:white;border-radius:50%;width:65px;height:65px;font-size:13px;font-weight:bold;box-shadow:0 3px 8px #0008;touch-action:none}
+button:active,.pressed{background:#d16b24!important}
+#gas{width:76px;height:76px;background:#c56b24dd}
+#brake{background:#a62d2ddd}
+#camera{position:absolute;top:13px;right:118px;width:auto;height:34px;border-radius:10px;padding:0 10px;font-size:11px}
+#start{position:absolute;inset:0;background:#071018d9;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;padding:25px;pointer-events:auto}
+#start h1{font-size:34px;margin:0 0 8px}#start p{max-width:330px;line-height:1.5;color:#d5e1e5}
+#start button{border-radius:12px;width:auto;height:auto;padding:15px 28px;background:#c56b24}
+#help{position:absolute;bottom:104px;left:0;right:0;text-align:center;font-size:11px;color:#fff9}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+ <div id="brand">🏍 FERMANMOTO</div><div id="score">PUAN 0</div>
+ <div id="map"></div><div id="speedo"><div id="speed">0</div><div id="unit">KM/SA</div></div><div id="gear">VİTES 1</div>
+ <div id="ml" class="mirror"></div><div id="mr" class="mirror"></div>
+ <button id="camera">KAMERA</button>
+ <div id="help">SOL / SAĞ: DÖNÜŞ &nbsp; • &nbsp; GAZ: HIZLAN &nbsp; • &nbsp; FREN: YAVAŞLA</div>
+ <div id="controls">
+  <div class="group"><button id="left">◀</button><button id="right">▶</button></div>
+  <div class="group"><button id="brake">FREN</button><button id="gas">GAZ</button></div>
+ </div>
+</div>
+<div id="start"><h1>FERMANMOTO</h1><p>Şehir trafiğinde motorunu sür! Araçlara çarpmadan ilerle, puan topla ve hızını artır.</p><button id="play">SÜRÜŞE BAŞLA</button></div>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+let w,h,dpr, speed=0, steer=0, roadShift=0, distance=0, score=0, crashFlash=0, started=false, gameOver=false, camera=0;
+let cars=[], trees=[], buildings=[];
+const input={left:false,right:false,gas:false,brake:false};
+function resize(){dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;canvas.width=w*dpr;canvas.height=h*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function rand(a,b){return a+Math.random()*(b-a)}
+function drawCity(){
+ ctx.fillStyle='#86b6cf';ctx.fillRect(0,0,w,h*.55);
+ let horizon=h*.32;
+ // distant skyline
+ for(let i=0;i<18;i++){let x=i*w/16-(roadShift*.12%50),bw=rand(25,60),bh=rand(55,145);ctx.fillStyle=['#687e87','#87969a','#536b75'][i%3];ctx.fillRect(x,horizon-bh,bw,bh);ctx.fillStyle='#d8d6b3';for(let yy=horizon-bh+9;yy<horizon-8;yy+=16)for(let xx=x+7;xx<x+bw-5;xx+=13)ctx.fillRect(xx,yy,5,7)}
+ // roadside trees and grass
+ ctx.fillStyle='#6d9b4e';ctx.fillRect(0,horizon,w,h-horizon);
+ for(let side of [-1,1])for(let i=0;i<7;i++){let z=((i/7+roadShift*.002)%1), y=horizon+z*z*(h-horizon), x=w/2+side*(w*.12+z*w*.48);let s=.2+z*1.3;ctx.fillStyle='#604a35';ctx.fillRect(x-3*s,y-25*s,6*s,27*s);ctx.fillStyle=['#286b3d','#347d43','#3f8848'][i%3];ctx.beginPath();ctx.arc(x,y-30*s,17*s,0,7);ctx.fill()}
+}
+function road(){
+ let hy=h*.32, cx=w/2+steer*w*.12, bottomL=w*.04-steer*w*.18,bottomR=w*.96-steer*w*.18;
+ ctx.fillStyle='#4b5052';ctx.beginPath();ctx.moveTo(cx-w*.105,hy);ctx.lineTo(cx+w*.105,hy);ctx.lineTo(bottomR,h);ctx.lineTo(bottomL,h);ctx.closePath();ctx.fill();
+ // shoulders / lane markers
+ ctx.strokeStyle='#eee';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(cx-w*.105,hy);ctx.lineTo(bottomL,h);ctx.moveTo(cx+w*.105,hy);ctx.lineTo(bottomR,h);ctx.stroke();
+ for(let j=0;j<9;j++){let z=((j/9+roadShift*.012)%1),y=hy+z*z*(h-hy),x=cx;let ww=2+z*5,hh=5+z*32;ctx.fillStyle='#f6edc7';ctx.fillRect(x-ww/2,y,ww,hh)}
+}
+function drawCar(car){let z=car.z,y=h*.32+z*z*h*.68,x=w/2+car.lane*(w*.42*z+w*.03)-steer*w*.12;let cw=(15+z*65),ch=(12+z*68);ctx.fillStyle='#15191b';ctx.fillRect(x-cw*.58,y-ch*.55,cw*1.16,ch*1.1);ctx.fillStyle=car.color;ctx.beginPath();ctx.moveTo(x-cw/2,y);ctx.lineTo(x-cw*.36,y-ch);ctx.lineTo(x+cw*.36,y-ch);ctx.lineTo(x+cw/2,y);ctx.closePath();ctx.fill();ctx.fillStyle='#b9dce7';ctx.fillRect(x-cw*.29,y-ch*.82,cw*.58,ch*.28);ctx.fillStyle='#ff3429';ctx.fillRect(x-cw*.43,y-ch*.15,cw*.18,ch*.12);ctx.fillRect(x+cw*.25,y-ch*.15,cw*.18,ch*.12)}
+function drawCockpit(){
+ if(camera===1){return}
+ // handlebars, tank and rider gloves foreground
+ ctx.fillStyle='#111';ctx.beginPath();ctx.moveTo(w*.27,h*.75);ctx.quadraticCurveTo(w*.5,h*.62,w*.73,h*.75);ctx.lineTo(w*.88,h*.83);ctx.lineTo(w*.12,h*.83);ctx.closePath();ctx.fill();
+ ctx.strokeStyle='#17191a';ctx.lineWidth=17;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(w*.18,h*.79);ctx.lineTo(w*.37,h*.72);ctx.lineTo(w*.63,h*.72);ctx.lineTo(w*.82,h*.79);ctx.stroke();
+ ctx.strokeStyle='#aaa';ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(w*.18,h*.79);ctx.lineTo(w*.37,h*.72);ctx.lineTo(w*.63,h*.72);ctx.lineTo(w*.82,h*.79);ctx.stroke();
+ ctx.fillStyle='#090e13';ctx.beginPath();ctx.ellipse(w*.5,h*.89,w*.27,h*.17,0,0,7);ctx.fill();
+ let g=ctx.createRadialGradient(w*.5,h*.84,2,w*.5,h*.9,w*.28);g.addColorStop(0,'#3151c7');g.addColorStop(1,'#101b54');ctx.fillStyle=g;ctx.beginPath();ctx.ellipse(w*.5,h*.91,w*.24,h*.12,0,0,7);ctx.fill();
+ ctx.fillStyle='#171b1d';ctx.beginPath();ctx.roundRect(w*.39,h*.65,w*.22,h*.12,18);ctx.fill();ctx.fillStyle='#dce5e8';ctx.fillRect(w*.43,h*.68,w*.14,3);
+ for(let side of [-1,1]){ctx.fillStyle='#b65d1e';ctx.beginPath();ctx.ellipse(w*.5+side*w*.36,h*.79,w*.09,h*.055,side*.3,0,7);ctx.fill();ctx.fillStyle='#25292a';ctx.fillRect(w*.5+side*w*.34,h*.75,w*.1,h*.06)}
+}
+function drawFirstPerson(){// full first person road view with smaller cockpit
+ drawCity();road();for(const car of cars)drawCar(car);drawCockpit()}
+function drawThirdPerson(){drawCity();road();for(const car of cars)drawCar(car);let x=w/2-steer*w*.12,y=h*.79;ctx.fillStyle='#101010';ctx.beginPath();ctx.ellipse(x,y+23,22,38,0,0,7);ctx.fill();ctx.fillStyle='#17212a';ctx.beginPath();ctx.moveTo(x-18,y-12);ctx.lineTo(x-12,y-40);ctx.lineTo(x+13,y-40);ctx.lineTo(x+20,y+12);ctx.closePath();ctx.fill();ctx.strokeStyle='#ddd';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x-42,y-24);ctx.lineTo(x+42,y-24);ctx.stroke();ctx.fillStyle='#f3a21a';ctx.beginPath();ctx.arc(x,y-49,13,0,7);ctx.fill()}
+function loop(){
+ if(started&&!gameOver){
+  if(input.gas)speed=Math.min(1.65,speed+.012);else speed=Math.max(.25,speed-.004);
+  if(input.brake)speed=Math.max(0,speed-.035);
+  if(input.left)steer=Math.max(-1,steer-.025);if(input.right)steer=Math.min(1,steer+.025);
+  if(!input.left&&!input.right)steer*=.985;
+  roadShift+=speed*2.5;distance+=speed;score=Math.floor(distance/8);
+  if(Math.random()<.025+speed*.006&&cars.length<8)cars.push({z:0,lane:rand(-.82,.82),color:['#e64b32','#d9dce0','#2765bb','#25292c','#d6a52b'][Math.floor(Math.random()*5)]});
+  cars.forEach(car=>car.z+=.002+speed*.003);
+  cars=cars.filter(car=>car.z<1.15);
+  for(let car of cars){if(car.z>.88&&car.z<1.03&&Math.abs(car.lane-steer*.42)<.18){speed*=.35;car.z=1.2;crashFlash=12}}
+  if(crashFlash>0)crashFlash--;
+ }
+ ctx.clearRect(0,0,w,h);
+ if(camera===0)drawFirstPerson();else drawThirdPerson();
+ document.getElementById('speed').textContent=Math.round(speed*105);
+ document.getElementById('score').textContent='PUAN '+score;
+ document.getElementById('gear').textContent='VİTES '+(speed<.4?1:speed<.8?2:speed<1.2?3:4);
+ if(crashFlash>0){ctx.fillStyle='rgba(255,30,20,.18)';ctx.fillRect(0,0,w,h)}
+ requestAnimationFrame(loop)
+}
+function bind(id,key){let b=document.getElementById(id);b.addEventListener('pointerdown',e=>{e.preventDefault();input[key]=true;b.classList.add('pressed')});['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>{input[key]=false;b.classList.remove('pressed')}))}
+bind('left','left');bind('right','right');bind('gas','gas');bind('brake','brake');
+document.getElementById('camera').onclick=()=>{camera=1-camera;document.getElementById('camera').textContent=camera?'KAMERA: ARKADAN':'KAMERA: SÜRÜCÜ'};
+document.getElementById('play').onclick=()=>{started=true;document.getElementById('start').style.display='none'};
+loop();
+</script>
+</body></html>
